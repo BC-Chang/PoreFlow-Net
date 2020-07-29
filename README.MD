@@ -2,7 +2,7 @@
 
 # BernFlow-Net
 Implementation of
-**PoreFlow-Net: a 3D convolutional neural network to predict fluid flow through porous media**
+**BernFlow-Net: a 3D convolutional neural network**
 ## Instructions
 1. Download the desired data from [my google drive](https://drive.google.com/drive/folders/1iQzeNL1BSOeh5repwVlkM0y4sZyeh6Kd?usp=sharing) (or create your own via your preferred simulation method)
 2. Create a new conda env
