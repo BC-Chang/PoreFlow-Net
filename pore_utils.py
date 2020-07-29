@@ -26,6 +26,13 @@ def load_data( sets, path, split=False , input_size = np.nan,
                overlap = np.nan ):
     
     """
+    Notes for Bernie:
+        Here I'm loading a lot of stuff. We probably don't need all of that. 
+        This was kind os my first python code so there is a lot of repetition and bad practices.
+        Don't worry I'm much better now.
+    """
+    
+    """
     Loads the data (for train or test)
     
     The data was saved in matlab matrix format because of ... <- insert good reason here
@@ -48,7 +55,8 @@ def load_data( sets, path, split=False , input_size = np.nan,
         euclidean       = loadmat('%s/euclidean_pore_%d'    % (path , load_set))
         euclideanZ      = loadmat('%s/euclidean_poreZ_%d'   % (path , load_set))
         euclidean_total = loadmat('%s/euclidean_total_%d'   % (path , load_set))
-        velocity_z      = loadmat('%s/velocity_z_full_%d'   % (path , load_set))
+        #velocity_z      = loadmat('%s/velocity_z_full_%d'   % (path , load_set))
+        velocity_z      = loadmat('%s/elecpot_%d'   % (path , load_set))
         time_flight_L   = loadmat('%s/ToF_l_%d'             % (path , load_set))
         time_flight_R   = loadmat('%s/ToF_r_%d'             % (path , load_set))
         mis_full        = loadmat('%s/MIS_full_%d'          % (path , load_set))
@@ -58,7 +66,8 @@ def load_data( sets, path, split=False , input_size = np.nan,
         p_euclidean_pore    = euclidean['e_domain'].astype('float32')
         p_euclidean_poreZ   = euclideanZ['e_z'].astype('float32')
         p_euclidean_total   = euclidean_total['e_full'].astype('float32')
-        p_velocity_z        = velocity_z['vz'].astype('float32')
+        #p_velocity_z        = velocity_z['vz'].astype('float32')
+        p_velocity_z        = velocity_z['pot_domain'].astype('float32')
         p_tof_L             = time_flight_L['tOf_L'].astype('float32')
         p_tof_R             = time_flight_R['tOf_R'].astype('float32')
         p_mis_f             = mis_full['MIS_3D'].astype('float32')
