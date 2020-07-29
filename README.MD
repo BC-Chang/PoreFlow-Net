@@ -5,15 +5,22 @@ Implementation of
 **PoreFlow-Net: a 3D convolutional neural network to predict fluid flow through porous media**
 ## Instructions
 1. Download the desired data from [my google drive](https://drive.google.com/drive/folders/1iQzeNL1BSOeh5repwVlkM0y4sZyeh6Kd?usp=sharing) (or create your own via your preferred simulation method)
-2. Use the train.py script to train a model
+2. create a new conda env
+```bash
+conda create --name bernie_env python=3.6 keras-gpu matplotlib spyder
+conda activate bernie_env
+pip install git+https://github.com/je-santos/livelossplot
+pip install hdf5storage
+```
+
+3. Use the train.py script to train a model
 
 ## Model architecture
 This is how our network looks like:
 ![architecture](https://github.com/je-santos/PoreFlow-Net/blob/master/ilustrations/net.JPG)
 ## Methodology
 ![Process Overview](https://github.com/je-santos/PoreFlow-Net/blob/master/ilustrations/workflow.PNG)
-## Pre-requisites
-To train/test the model we used tensorflow 1.12, newer versions should work
+
 
 The rest of the necessary packages should be available via pip
 
