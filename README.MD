@@ -1,6 +1,6 @@
 <img align="right" width="40%" height="40%" src="https://github.com/je-santos/PoreFlow-Net/blob/master/ilustrations/flow.PNG"/>
 
-# PoreFlow-Net
+# BernFlow-Net
 Implementation of
 **PoreFlow-Net: a 3D convolutional neural network to predict fluid flow through porous media**
 ## Instructions
