@@ -19,18 +19,14 @@ def create_dir(name):
     else:    
         print("Directory: " , name ,  "Folder already exists!")
     
-    shutil.copy2('train.py', ( 'savedModels/%s' % name )) #created a copy of training file
+    try:
+        shutil.copy2('train.py', ( 'savedModels/%s' % name )) #created a copy of training file
+    except:
+        print("File: train.py already exists! ")
     
     
-def load_data( sets, path, split=False , input_size = np.nan, 
+def load_data( sets, features, path, split=False , input_size = np.nan, 
                overlap = np.nan ):
-    
-    """
-    Notes for Bernie:
-        Here I'm loading a lot of stuff. We probably don't need all of that. 
-        This was kind os my first python code so there is a lot of repetition and bad practices.
-        Don't worry I'm much better now.
-    """
     
     """
     Loads the data (for train or test)
@@ -38,6 +34,8 @@ def load_data( sets, path, split=False , input_size = np.nan,
     The data was saved in matlab matrix format because of ... <- insert good reason here
     
     sets : tuple of integers indicating the domain number: 1 is a finneypack, etc
+    feature: list of strings indicating desired features to load, do not include binary or vz
+        feature options: ['e_pore', 'e_total', 'e_poreZ', 'tof_L', 'tof_R', 'mis_f', 'mis_z']    
     path: location of the training data
     split: bool indicating wheter to split the domains in subdomains
     input_size: subdomain size
@@ -46,85 +44,48 @@ def load_data( sets, path, split=False , input_size = np.nan,
     
     if np.isnan(overlap) == True:
         overlap = input_size/2 - 1
+      
+    dom = { 'vz': ['detrended_pot','detrended_dom'], 'binary':['solid_full','domain'],
+           'e_pore':['euclidean_pore','e_domain'], 
+           'e_total':['euclidean_total','e_full'],
+           'e_poreZ':['euclidean_poreZ', 'e_z'],
+           'tof_L':['ToF_l', 'tOf_L'],
+           'tof_R':['ToF_r', 'tOf_R'],
+           'mis_f':['MIS_full', 'MIS_3D'],
+           'mis_z':['MIS_z_inlet', 'MIS_3D']}
+    
+    features.insert(0,'vz'); features.insert(0,'binary'); 
+    
+    t_set = {}
+    if np.isnan(overlap) == True:
+        overlap = input_size/2 - 1
             
     for i in range( 0 , np.size( sets ) ) :
         load_set = sets[i]
         print('Loading set no. %d' % load_set)
         
-        solid           = loadmat('%s/solid_full_%d'        % (path , load_set))
-        euclidean       = loadmat('%s/euclidean_pore_%d'    % (path , load_set))
-        euclideanZ      = loadmat('%s/euclidean_poreZ_%d'   % (path , load_set))
-        euclidean_total = loadmat('%s/euclidean_total_%d'   % (path , load_set))
-        #velocity_z      = loadmat('%s/velocity_z_full_%d'   % (path , load_set))
-        velocity_z      = loadmat('%s/elecpot_%d'   % (path , load_set))
-        time_flight_L   = loadmat('%s/ToF_l_%d'             % (path , load_set))
-        time_flight_R   = loadmat('%s/ToF_r_%d'             % (path , load_set))
-        mis_full        = loadmat('%s/MIS_full_%d'          % (path , load_set))
-        mis_z           = loadmat('%s/MIS_z_inlet_%d'       % (path , load_set))
-        
-        p_solid             = solid['domain'] ; p_solid.astype('float32')
-        p_euclidean_pore    = euclidean['e_domain'].astype('float32')
-        p_euclidean_poreZ   = euclideanZ['e_z'].astype('float32')
-        p_euclidean_total   = euclidean_total['e_full'].astype('float32')
-        #p_velocity_z        = velocity_z['vz'].astype('float32')
-        p_velocity_z        = velocity_z['pot_domain'].astype('float32')
-        p_tof_L             = time_flight_L['tOf_L'].astype('float32')
-        p_tof_R             = time_flight_R['tOf_R'].astype('float32')
-        p_mis_f             = mis_full['MIS_3D'].astype('float32')
-        p_mis_z             = mis_z['MIS_3D'].astype('float32')
-        
-        phi = np.sum(p_solid<1)/p_solid.size
-        print(f'The porosity of this domain is {phi}')
-        p_solid = calculate_weighted_mask(p_solid)
-        
-        if split==True:
-
-            vz_tmp      = split_matrix( p_velocity_z     , input_size , overlap)
-            binary_tmp  = split_matrix( p_solid          , input_size , overlap) 
-            e_pore_tmp  = split_matrix( p_euclidean_pore , input_size , overlap)
-            e_poreZ_tmp = split_matrix( p_euclidean_poreZ, input_size , overlap)
-            e_total_tmp = split_matrix( p_euclidean_total, input_size , overlap)
-            tof_L_tmp   = split_matrix( p_tof_L          , input_size , overlap)
-            tof_R_tmp   = split_matrix( p_tof_R          , input_size , overlap)
-            MIS_f_tmp   = split_matrix( p_mis_f          , input_size , overlap)
-            MIS_z_tmp   = split_matrix( p_mis_z          , input_size , overlap)
+        for feat in features:
+            feat_data = loadmat(f'{path}/{dom[feat][0]}_{load_set}')
             
-            if i == 0:
-                
-                vz          = vz_tmp
-                binary      = binary_tmp
-                e_pore      = e_pore_tmp
-                e_poreZ     = e_poreZ_tmp
-                e_total     = e_total_tmp
-                tof_L       = tof_L_tmp
-                tof_R       = tof_R_tmp
-                MIS_f       = MIS_f_tmp
-                MIS_z       = MIS_z_tmp
-                
+            p_feat_data = feat_data[dom[feat][1]].astype('float32')
+            
+            if feat == 'binary':
+                phi = np.sum(p_feat_data < 1) / p_feat_data.size
+                print(f'The porosity of this domain is {phi}')
+                p_feat_data = calculate_weighted_mask(p_feat_data)
+            
+            if split == True:
+                data_tmp = split_matrix(p_feat_data, input_size, overlap)
             else:
+                data_tmp = p_feat_data
                 
-                vz        = np.concatenate( ( vz      , vz_tmp      ),  axis=0) 
-                binary    = np.concatenate( ( binary  , binary_tmp  ),  axis=0)
-                e_pore    = np.concatenate( ( e_pore  , e_pore_tmp  ),  axis=0) 
-                e_poreZ   = np.concatenate( ( e_poreZ , e_poreZ_tmp ),  axis=0)
-                e_total   = np.concatenate( ( e_total , e_total_tmp ),  axis=0) 
-                tof_L     = np.concatenate( ( tof_L   , tof_L_tmp   ),  axis=0)
-                tof_R     = np.concatenate( ( tof_R   , tof_R_tmp   ),  axis=0)
-                MIS_f     = np.concatenate( ( MIS_f   , MIS_f_tmp   ),  axis=0)
-                MIS_z     = np.concatenate( ( MIS_z   , MIS_z_tmp   ),  axis=0)
-        
-            t_set = { 'vz' : vz, 
-                     'e_pore' : e_pore, 'e_total':e_total, 'e_poreZ': e_poreZ,
-                     'tof_L':tof_L,'tof_R':tof_R,
-                     'mis_f': MIS_f, 'mis_z': MIS_z, 'binary':binary}
+            if i == 0: 
+                t_set[f'{feat}'] = data_tmp 
+            else:
+                t_set[f'{feat}'] = np.concatenate((t_set[f'{feat}'], data_tmp), axis=0)
+            
                 
-        else: #if no splitting is requested
-            t_set = {'vz':p_velocity_z,
-                     'binary':p_solid,'e_pore':p_euclidean_pore, 
-                     'e_poreZ':p_euclidean_poreZ, 
-                     'e_total':p_euclidean_total,'tof_L': p_tof_L,'tof_R': p_tof_R,
-                     'mis_f': p_mis_f, 'mis_z': p_mis_z}
-                          
+    
     return t_set
 
 def calculate_weighted_mask(solid_mask):
@@ -536,3 +497,5 @@ def unsplit_matrix(mt, w_stride=0):
                 ii = ii+1
     
     return m
+
+
