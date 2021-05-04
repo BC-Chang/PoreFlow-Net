@@ -106,17 +106,17 @@ def build_PF_net(input_shape0, input_shape1, input_shape2, input_shape3,
     
     # Concatenate the residual units of e/branch for the skip connections 
     branch_sum_0 = concatenate( [branch0[0], branch1[0], branch2[0], 
-                                 branch3[0] ], axis=4)
+                                  branch3[0] ], axis=4)
     
     branch_sum_1 = concatenate( [branch0[1], branch1[1], branch2[1], 
-                                 branch3[1] ], axis=4)
+                                  branch3[1] ], axis=4)
     
     branch_sum_2 = concatenate( [branch0[2], branch1[2], branch2[2], 
-                                 branch3[2] ], axis=4)
+                                  branch3[2] ], axis=4)
   
     # Create bridge between encoder and decoder
     path = res_block(branch_sum_2, [filters_1*8, filters_1*8, filters_1*8], 
-                     [(2, 2, 2), (1, 1, 1)])
+                      [(2, 2, 2), (1, 1, 1)])
 
     # Create decoder branch
     path = decoder(path, branch_sum_0, branch_sum_1, branch_sum_2, filters_1)

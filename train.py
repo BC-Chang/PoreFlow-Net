@@ -18,15 +18,18 @@ from keras.backend.tensorflow_backend import set_session
 from keras.models import Model
 from keras.models import load_model
 from keras.models import save_model
-from livelossplot.keras import PlotLossesCallback #liveloss plot has to be installed
-
+from livelossplot import PlotLossesKeras #liveloss plot has to be installed
+from livelossplot.plot_losses import MatplotlibPlot
 from networks.PF_net_4branches import * #our proposed 3D CNN
+from networks.PF_net_1branch import *   # Adapted 3D CNN with 1 branch
+from networks.PF_net_2branches import * # Adapted 3D CNN with 2 branches
 import pore_utils #my library
 
-#K.set_epsilon(1e-2) #fixes crazy high numbers when using MAPE
+K.set_epsilon(1e-2) #fixes crazy high numbers when using MAPE
 
 from numpy.random import seed
 #from tensorflow import set_random_seed
+import sys
 
 """
 Main inputs
@@ -35,12 +38,13 @@ num_gpus      = 1       #number of graphic-processing units to train model
 mem_fraction  = 0.95    #fraction of GPU to use
 use_generator = False    #option to use data-generator instead of loading all the data to the RAM
 #num_features  = 1
-net_branches  = 4
+net_branches  = 1
 num_filters   = 10      #number of conv filters in the first layer
 batch_size    = 5  
 epochs        = 750
-rnd_num       = 280691  #rnd seed to initialize the model
-dir_data      = 'D:/SPLBM_output/finney'  #location of the training data
+rnd_num       = 42721  #rnd seed to initialize the model
+dir_data      = '/scratch/06898/bchang/finney'  #location of the training data
+data_input    = str(sys.argv[1])
 
 
 """
@@ -54,8 +58,8 @@ seed(rnd_num)
 """
 Data options
 """
-input_size        = 80 #lenght of the side of a training cube (pixels)
-train_on_sets     = [21,22,23,24,25] #training sets to use (each int is a domain)
+input_size        = 80 #length of the side of a training cube (pixels)
+train_on_sets     = [21, 22, 23, 24, 25] #training sets to use (each int is a domain)
 validation_split  = 0.2    #splits the last x %
 patience_training = 100 #epochs before it stops training
 total_samples     = 1080 #for data generator
@@ -76,7 +80,7 @@ data_transform_MIS   = 'minMax_2'
 """
 Set a name for the model
 """
-model_name = f'PoreFlow_minMax2_branches_{net_branches}_filters_{num_filters}_{rnd_num}'
+model_name = f'PoreFlow_minMax2_branches_{net_branches}_filters_{num_filters}_{rnd_num}_{data_input}'
 pore_utils.create_dir( model_name ) #creates a folder to store the output
 
 """
@@ -95,7 +99,7 @@ if use_generator == False:
     if the user has its own data, this step can be skipped
     """
     train_set = pore_utils.load_data( sets = train_on_sets, path=dir_data,
-                                      split=True,input_size = input_size, 
+                                      split=True, input_size = input_size, 
                                       overlap=0 )
     binary_mask = train_set['binary']  #binary mask for the custom loss
     
@@ -104,6 +108,7 @@ if use_generator == False:
     Now, we can select and transform our inputs. 
     The summary stats are saved in a file for later use
     """
+    '''
     e_train, e_stats          = pore_utils.transform( train_set['e_pore'], 
                                                      data_transform_pore, 
                                                      model_name, 
@@ -128,27 +133,40 @@ if use_generator == False:
                                                      data_transform_tof, 
                                                      model_name, 
                                                      fileName='tof_R_stats')
-    
-    
+    '''
+    data_train1, data_stats1    = pore_utils.transform( train_set[str(sys.argv[2])],
+                                                     data_transform_tof,
+                                                     model_name,
+                                                     fileName=str(sys.argv[3]))    
+    # data_train2, data_stats2    = pore_utils.transform( train_set[str(sys.argv[4])],
+    #                                                     data_transform_tof,
+    #                                                     model_name,
+    #                                                     fileName=str(sys.argv[5]))
     vz , vz_stats     = pore_utils.transform( train_set['vz'], 
                                              data_transform_vel, 
                                              model_name, 
                                              fileName='Vz_trainStats')
     
+    
+    vz[vz==-1] = 0
     del train_set #deletes the file to free-up memory
     
-    
+    '''
     X_train = np.concatenate( ( 
                                 np.expand_dims(e_train,axis=4) , 
                                 np.expand_dims(tof_L_train,axis=4), 
                                 np.expand_dims(tof_R_train,axis=4),
                                 np.expand_dims(MIS_z_train,axis=4),
                                 ), axis=4)
-    
-    
+    '''
+    X_train = np.expand_dims(data_train1, axis=4)
+    #X_train = np.concatenate( (np.expand_dims(data_train1, axis=4),
+    #                           np.expand_dims(data_train2, axis=4),
+    #                           ), axis=4)
     y_train =  np.expand_dims(vz,axis=4) 
     
-    del e_train, vz, tof_L_train, tof_R_train
+    #del e_train, vz, tof_L_train, tof_R_train
+    del data_train1#, data_train2
     if X_train.ndim <= 4:
             X_train = np.expand_dims( X_train , axis=4 ) 
             
@@ -181,7 +199,7 @@ else:
 """
 Callbacks and model internals
 """
-
+# Mean absolute percentage error (MAPE), Mean absolute error (MAE)
 metrics=['MAPE','MAE'] 
 
 #Custom loss as described in the paper
@@ -197,8 +215,7 @@ else:
 
 
 optimizer     = keras.optimizers.Adam() # the default LR does the job
-plot_losses   = PlotLossesCallback( 
-                        fig_path=('savedModels/%s/metrics.png' % model_name) )    
+plot_losses   = PlotLossesKeras(outputs=[MatplotlibPlot(figpath=f'savedModels/{model_name}/metrics.png')])    
 nan_terminate = keras.callbacks.TerminateOnNaN()
 early_stop    = keras.callbacks.EarlyStopping(monitor ='val_loss', min_delta=0, 
                                               patience=patience_training, 
@@ -216,13 +233,24 @@ early_stop    = keras.callbacks.EarlyStopping(monitor ='val_loss', min_delta=0,
 
 csv_logger = keras.callbacks.CSVLogger("savedModels/%s/training_log.csv" % model_name)
 
-#with tf.device('/cpu:0'):
-model = build_PF_net(   input_shape0  = ( None, None, None, 1 ), 
-                        input_shape1  = ( None, None, None, 1 ), 
-                        input_shape2  = ( None, None, None, 1 ), 
-                        input_shape3  = ( None, None, None, 1 ), 
-                        filters_1     = num_filters )
+try:
+    model = load_model(f"savedModels/{model_name}/{model_name}.h5")
 
+except:
+    #with tf.device('/cpu:0'):
+    '''
+    model = build_PF_net(   input_shape0  = ( None, None, None, 1 ), 
+                            input_shape1  = ( None, None, None, 1 ), 
+                            input_shape2  = ( None, None, None, 1 ), 
+                            input_shape3  = ( None, None, None, 1 ), 
+                            filters_1     = num_filters )
+    '''
+    model = build_1_branch_PF_net(   input_shape  = ( None, None, None, 1 ), 
+                                     filters_1     = num_filters )
+
+#model = build_PF_net(input_shape0 = (None, None, None, 1),
+#                              input_shape1 = (None, None, None, 1),
+#                              filters_1    = num_filters )
 model.summary()
 
 if num_gpus > 1:
