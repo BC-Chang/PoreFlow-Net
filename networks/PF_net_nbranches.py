@@ -30,11 +30,11 @@ def build_n_branch_PF_net(num_branches, input_shapes, filters_1=5):
         branch_sum_n = branches[0]
         
     # Create bridge between encoder and decoder
-    path = res_block(branch_sum_n[2], [filters_1*8, filters_1*8, filters_1*8], 
+    path = res_block(branch_sum_n[2][0], [filters_1*8, filters_1*8, filters_1*8], 
                       [(2, 2, 2), (1, 1, 1)])
     
     # Create decoder branch
-    path = decoder(path, branch_sum_n[0], branch_sum_n[1], branch_sum_n[2], filters_1)
+    path = decoder(path, branch_sum_n[0][0], branch_sum_n[1][0], branch_sum_n[2][0], filters_1)
     
     # Last filter, this outputs the velocity in Z-direction
     # for pressure or the full velocity tensor, one could change the 

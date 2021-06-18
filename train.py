@@ -42,12 +42,13 @@ use_generator = args.use_generator    #option to use data-generator instead of l
 #num_features  = 1
 net_branches  = args.n_branches
 num_filters   = args.n_filters      #number of conv filters in the first layer
-batch_size    = args.n_filters  
+batch_size    = args.batch_size  
 epochs        = args.epochs
 rnd_num       = args.rnd_num  #rnd seed to initialize the model
 dir_data      = 'G:/My Drive/Documents/Research/Solid_Full_X/finney'  #location of the training data
 #data_input    = sys.argv[1]
 features      = args.features
+print(args.name)
 
 """
 Set the random number seeds
@@ -61,7 +62,7 @@ seed(rnd_num)
 Data options
 """
 input_size        = args.input_size #lenght of the side of a training cube (pixels)
-train_on_sets     = [21]#, 22, 23, 24, 25] #training sets to use (each int is a domain)
+train_on_sets     = [21,25]#, 22, 23, 24, 25] #training sets to use (each int is a domain)
 validation_split  = args.val_split    #splits the last x %
 patience_training = args.patience_training #epochs before it stops training
 total_samples     = args.total_samples #for data generator
@@ -110,8 +111,7 @@ if use_generator == False:
     Now, we can select and transform our inputs. 
     The summary stats are saved in a file for later use
     """
-    
-    for count, feat in enumerate(features):
+    for count, feat in enumerate(features[2:]):
         feat_train, _         = pore_utils.transform( train_set[feat],
                                                       data_transform,
                                                       model_name,
@@ -178,7 +178,7 @@ if use_customloss == True:
     y_train = np.concatenate( (np.expand_dims(binary_mask,4),
                                                     y_train),axis=4)
 else:
-    loss = keras.losses.mean_squared_error
+    loss = keras.losses.mean_absolute_error
         
 
 
@@ -207,7 +207,8 @@ csv_logger = keras.callbacks.CSVLogger("savedModels/%s/training_log.csv" % model
 #                         input_shape2  = ( None, None, None, 1 ), 
 #                         input_shape3  = ( None, None, None, 1 ), 
 #                         filters_1     = num_filters )
-
+asdf
+#%%
 model = build_n_branch_PF_net(   net_branches, 
                                   list(repeat((None, None, None, 1), net_branches)),
                                   filters_1 = num_filters )

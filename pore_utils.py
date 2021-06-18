@@ -5,6 +5,8 @@ from hdf5storage import loadmat#load matrices
 import keras
 import keras.backend as K
 import scipy
+import itertools as it
+import timeit
 
 
 def create_dir(name):
@@ -42,19 +44,21 @@ def load_data( sets, features, path, split=False , input_size = np.nan,
     overlap: indicates if these subdomains should be sample with overlap
     """
     
-    if np.isnan(overlap) == True:
-        overlap = input_size/2 - 1
-      
-    dom = { 'vz': ['detrended_pot','detrended_dom'], 'binary':['solid_full','domain'],
+
+    dom = {'vz': ['detrended_pot','detrended_dom'], 
+           #'vz': ['elecpot', 'pot_domain'],
+           'binary':['solid_full','domain'], 'linear':['linear_trend','linear_dom'],
            'e_pore':['euclidean_pore','e_domain'], 
            'e_total':['euclidean_total','e_full'],
            'e_poreZ':['euclidean_poreZ', 'e_z'],
+           'poros':['detrended_porosimetry','pore_domain'],
            'tof_L':['ToF_l', 'tOf_L'],
            'tof_R':['ToF_r', 'tOf_R'],
            'mis_f':['MIS_full', 'MIS_3D'],
            'mis_z':['MIS_z_inlet', 'MIS_3D']}
     
-    features.insert(0,'vz'); features.insert(0,'binary'); 
+    if not 'vz' in features: features.insert(0,'vz')
+    if not 'binary' in features: features.insert(0,'binary'); 
     
     t_set = {}
     if np.isnan(overlap) == True:
@@ -65,28 +69,46 @@ def load_data( sets, features, path, split=False , input_size = np.nan,
         print('Loading set no. %d' % load_set)
         
         for feat in features:
-            feat_data = loadmat(f'{path}/{dom[feat][0]}_{load_set}')
+            # feat_data = loadmat(f'{path}/{dom[feat][0]}_{load_set}')
+
+            # p_feat_data = feat_data[dom[feat][1]].astype('float32')
+            # print(p_feat_data.shape)
+            if feat == 'binary': 
+                data_type = 'uint8'
+            else:
+                data_type = 'float32'
+                
+            p_feat_data = np.fromfile(f'{path}/{dom[feat][0]}_{load_set}.raw', dtype=data_type)
+            p_feat_data.astype('float32')
             
-            p_feat_data = feat_data[dom[feat][1]].astype('float32')
+
+            data_shape = int(np.round(p_feat_data.shape[0] ** (1./3.)))
+            p_feat_data = p_feat_data.reshape((data_shape, data_shape, data_shape))
+            
+
             
             if feat == 'binary':
                 phi = np.sum(p_feat_data < 1) / p_feat_data.size
                 print(f'The porosity of this domain is {phi}')
                 p_feat_data = calculate_weighted_mask(p_feat_data)
-            
+                
+            if feat == features[-1]:
+                data_shape = p_feat_data.shape
+                print(data_shape)
+
             if split == True:
                 data_tmp = split_matrix(p_feat_data, input_size, overlap)
+                print(data_tmp.shape)
             else:
                 data_tmp = p_feat_data
-                
+   
             if i == 0: 
                 t_set[f'{feat}'] = data_tmp 
             else:
                 t_set[f'{feat}'] = np.concatenate((t_set[f'{feat}'], data_tmp), axis=0)
             
-                
     
-    return t_set
+    return t_set, [data_shape[0]-2, data_shape[1]-2, data_shape[2]-2]
 
 def calculate_weighted_mask(solid_mask):
     
@@ -98,9 +120,40 @@ def calculate_weighted_mask(solid_mask):
         solid_mask[:,:,i][ solid_mask[:,:,i] == 0 ] = 1/porosity
         solid_mask[:,:,i] = solid_mask[:,:,i]/np.sum(solid_mask[:,:,i])*np.size(solid_mask[:,:,i])
     return solid_mask
+'''
+def split_matrix(m, w_size,  erase_bcs=True):
+    """
+    Splits the 3D domain into smaller subdomains
+    
+    m: 3D domain
+    w_size: size of the subsamples
+    w_stride: stride lenght
+    erase_bcs: bool. if true erases the boundary layers (to avoid noise)
+    """
+    
+    if erase_bcs==True:
+        m=np.delete(m,-1,0) #get rid of the boundaries
+        m=np.delete(m,0 ,0)
+        
+        m=np.delete(m,-1,1)
+        m=np.delete(m,0 ,1)
+        
+        m=np.delete(m,-1,2)
+        m=np.delete(m,0 ,2)
+        
+    # Pad matrix with 0s to be divisible by w_size
+    if m.shape[0] % w_size != 0:
+        target_size = m.shape[0] + w_size - (m.shape[0] % w_size)
+        m = np.pad(m, (target_size - m.shape[0])//2, constant_values=(0))
+    
+    p, q, r = m.shape
+    
+    m = m.reshape((-1, q//w_size, w_size, r//w_size, w_size)).transpose(1,3,0,2,4).reshape(-1,p, w_size, w_size)    
+    
+    return m 
 
-
-def split_matrix(m, w_size, w_stride=0, erase_bcs=True):
+'''
+def split_matrix(m, w_size, w_stride=0, erase_bcs=True, pad=True):
     """
     Splits the 3D domain into smaller subdomains
     
@@ -121,41 +174,45 @@ def split_matrix(m, w_size, w_stride=0, erase_bcs=True):
         
         m=np.delete(m,-1,2)
         m=np.delete(m,0 ,2)
+    
         
-    sample_start=np.arange(0,m.shape[0],w_size)
-    sample_start=sample_start[sample_start<(m.shape[0]-(w_size+1))]
-    sub_sample_start=sample_start+w_stride
-    sub_sample_start=sub_sample_start[sub_sample_start<(m.shape[0]-(w_size+1))]
+    # Pad matrix with 0s to be divisible by w_size
+    if m.shape[0] % w_size != 0:
+        target_size = m.shape[0] + w_size - (m.shape[0] % w_size)
+        m = np.pad(m, (target_size - m.shape[0])//2, constant_values=(0))
+
+    p, q, r = m.shape
     
-    if w_stride == 0: #if no overlap is requested
-        mt=np.zeros((sample_start.size**3,w_size,w_size,w_size))
-    else: #subsamples + overlap
-        mt=np.zeros((sample_start.size**3+sub_sample_start.size**3,
-                     w_size,w_size,w_size))
+    mt = m.reshape((-1, q//w_size, w_size, r//w_size, w_size)).transpose(1,3,0,2,4).reshape((-1,w_size, w_size, w_size))         
+    # # Indices to split matrix
+    # sample_start=np.arange(0,m.shape[0],w_size)
+    # sample_start=sample_start[sample_start<(m.shape[0]-w_size+1)]
     
-    ii=0
+    # # Indices to split matrix with overlap
+    # sub_sample_start=sample_start+w_stride
+    # sub_sample_start=sub_sample_start[sub_sample_start<(m.shape[0]-w_size+1)]
     
-    for j in range(sample_start.size):
-        for k in range(sample_start.size):
-            for i in range(sample_start.size):
-                
-                mt[ii,:,:,:]=np.expand_dims(m[sample_start[k]:sample_start[k]+w_size, \
-                                 sample_start[j]:sample_start[j]+w_size, \
-                                 sample_start[i]:sample_start[i]+w_size],axis=0)
+    # if w_stride == 0: #if no overlap is requested
+    #     mt=np.zeros((sample_start.size**3,w_size,w_size,w_size))
+    # else: #subsamples + overlap
+    #     mt=np.zeros((sample_start.size**3+sub_sample_start.size**3,
+    #                   w_size,w_size,w_size))
+    
+    # ii=0
+    # for j,k,i in it.product(sample_start, repeat=3):
+    #     mt[ii,:,:,:]=np.expand_dims(m[k:k+w_size,
+    #                                   j:j+w_size,
+    #                                   i:i+w_size],axis=0)
         
-                ii=ii+1        
+    #     ii=ii+1        
                  
-    if w_stride!=0:
-        for i in range(sub_sample_start.size):
-            for j in range(sub_sample_start.size):
-                for k in range(sub_sample_start.size):
-    
-                    mt[ii,:,:,:]=np.expand_dims(m[sub_sample_start[k]:sub_sample_start[k]+w_size, \
-                                                     sub_sample_start[j]:sub_sample_start[j]+w_size, \
-                                                     sub_sample_start[i]:sub_sample_start[i]+w_size],axis=0)
-                    
+    # if w_stride!=0:
+    #     for i,j,k in it.product(sub_sample_start, repeat=3):
+    #         mt[ii,:,:,:]=np.expand_dims(m[k:k+w_size, \
+    #                                       j:j+w_size, \
+    #                                       i:i+w_size],axis=0)
                             
-                    ii=ii+1
+    #         ii=ii+1
 
     return mt
 
@@ -184,7 +241,7 @@ def transform( x, tName, modelName, fileName='tmp', isTraining=True):
         x_new_min = x_stats['x_new_min']
         
     else:
-        x_stats = np.loadtxt( 'savedModels/%s/%s.txt' % (modelName, fileName) , 
+        x_stats = np.loadtxt( 'syncModels/%s/%s.txt' % (modelName, fileName) , 
                              delimiter = ',' )
         
         x_mean    = x_stats[0]
@@ -347,6 +404,141 @@ def mean_absolute_percentage_error_custom(y_true_weights, y_pred):
                                            None))
     return 100. * K.mean(diff, axis=-1)
 
+def ijk2m(i, j, k, Nx, Ny):
+
+    m = Nx*Ny*k + Nx*j + i
+    
+    return m
+
+def flux_stats(currZ, p):
+    
+    ncurrZ = currZ.copy()
+
+    ncurrZ = ncurrZ.reshape((p['nx'], p['ny'], p['nz']))
+    fluxZ = np.sum(np.sum(ncurrZ,axis=1),axis=1)
+    fluxZ[np.abs(fluxZ) > 150] = np.nan
+    mean_flux = np.nanmean(fluxZ)
+    std_flux = np.nanstd(fluxZ)
+    
+    return mean_flux, std_flux
+
+def calc_elec_currz(cond, pot, p):
+    
+    y = np.zeros((p['nx']*p['ny']*p['nz']))
+    EPS = 1e-1
+    print('-'*10)
+    print('Calculating current...')
+    for k in range(p['nz']):
+        print('Slice ', k)
+        K = ijk2m(0,0,k,p['nx'],p['ny'])
+        for j in range(p['ny']):
+            for i in range(p['nx']):
+                if(cond[K] < EPS):
+                    y[K] = 0.
+                elif k < p['nz']-1 and cond[K + p['nxy']]>EPS:
+                    y[K] = -(pot[K+p['nxy']] - pot[K])*cond[K]/p['dz']
+                elif k == p['nz']-1 and cond[K-p['nxy']] > EPS:
+                    y[K] = -(pot[K] - pot[K- p['nxy']])*cond[K]/p['dz']
+                else:
+                    y[K] = 0.
+                K+=1
+                
+    mean_currZ, std_currZ = flux_stats(y, p)
+
+    return y, mean_currZ, std_currZ
+
+def unsplit_matrix_overlapped(mt1, w_stride=39, method='Max'):
+   
+    mt = np.copy(mt1)
+   
+    if mt.shape[0] == 250:
+        m_side      = 480
+        m  = np.zeros((m_side,m_side,m_side))
+        m1 = np.ones((m_side,m_side,m_side))
+        m2 = np.ones((m_side,m_side,m_side))
+       
+    if mt.shape[0] == 341:
+        m_side      = 500
+        m  = np.zeros((m_side,m_side,m_side))
+        m1 = np.ones((m_side,m_side,m_side))
+        m2 = np.ones((m_side,m_side,m_side))
+     
+    if method =='Max':
+        m1 = m1*(-np.inf)
+        m2 = m2*(-np.inf)
+    if method =='Min':
+        m1 = m1*(np.inf)
+        m2 = m2*(np.inf)
+    if method =='Mean':
+        m1 = m1*(np.nan)
+        m2 = m2*(np.nan)
+    if method =='Mid':
+        mask = np.ones((40,40,40))
+        mask = np.pad(mask, 20, 'constant')
+       
+        for i in range(0,mt.shape[0]):
+            mt[i,:,:,:] = mask*mt[i,:,:,:]
+           
+   
+    #mt[mt==0] = (-np.inf)
+       
+    sample_start=np.arange(0,m1.shape[0],mt.shape[1])
+    sample_start=sample_start[sample_start<(m1.shape[0]-(mt.shape[1]+1))]
+    sample_start = sample_start
+   
+   
+    sub_sample_start = sample_start+w_stride
+    sub_sample_start = sub_sample_start[sub_sample_start<(m1.shape[0]-(mt.shape[1]+1))]
+    sub_sample_start = sub_sample_start
+         
+   
+    m_side_cubes = sample_start.size
+    ii=0
+    for j in range(0,m_side_cubes):
+        for k in range(0,m_side_cubes):
+            for i in range(0,m_side_cubes):
+                m1[sample_start[k]:sample_start[k]+mt.shape[1],
+                   sample_start[j]:sample_start[j]+mt.shape[1],
+                   sample_start[i]:sample_start[i]+mt.shape[1] ] = np.squeeze( mt[ii,:,:,:] )
+                ii = ii+1
+               
+    m_side_cubes = sub_sample_start.size
+    for i in range(0,m_side_cubes):
+        for j in range(0,m_side_cubes):
+            for k in range(0,m_side_cubes):
+                m2[sub_sample_start[k]:sub_sample_start[k]+mt.shape[1],
+                   sub_sample_start[j]:sub_sample_start[j]+mt.shape[1],
+                   sub_sample_start[i]:sub_sample_start[i]+mt.shape[1] ] = np.squeeze( mt[ii,:,:,:] )
+                ii = ii+1
+   
+   
+    if method=='Max':
+        m = np.maximum(m1,m2)
+    if method=='Min':
+        m = np.minimum(m1,m2)
+    if method=='Mean':
+        m1[np.isnan(m1)] = m2[np.isnan(m1)]
+        m2[np.isnan(m2)] = m1[np.isnan(m2)]
+        m1[np.isnan(m1)] = 0
+        m2[np.isnan(m2)] = 0
+        m = (m1+m2)/2.0
+       
+   
+    if m_side == 500:
+        mask = np.arange(480,500)
+        m = np.delete(m,mask,axis=0)
+        m = np.delete(m,mask,axis=1)
+        m = np.delete(m,mask,axis=2)
+       
+    if m_side == 480:
+        mask = np.arange(400,480)
+        m = np.delete(m,mask,axis=0)
+        m = np.delete(m,mask,axis=1)
+        m = np.delete(m,mask,axis=2)
+       
+    return m
+
+
 class DataGenerator(keras.utils.Sequence):
     'Generates data for Keras'
     def __init__(self, file_loc, list_IDs, branches, 
@@ -455,6 +647,8 @@ def calculate_DarcyPerm(v_avg,d_size=500):
     k = v_avg*mu/dpdx
     return k   
 
+    
+
 def crop_sample(y, crop_size):
     
     m = np.copy(y)
@@ -480,21 +674,39 @@ def remove_solid(y1, solid_val=0):
     y[ y==solid_value ] = solid_val
     return y
 
+    
 def unsplit_matrix(mt, w_stride=0):
     m_side       = np.int(np.round(mt.size**(1/3)))
-    m_side_cubes = np.int(m_side/mt.shape[1])
-    m = np.zeros((m_side,m_side,m_side))
+    block_size   = mt.shape[-1]
+    m = mt.reshape((m_side//block_size, m_side//block_size, -1, block_size, block_size)).transpose(2,0,3,1,4).reshape((m_side, m_side, m_side))
+
     
-    sample_start=np.arange(0,m.shape[0]+1,mt.shape[1])
+    # m = mt.reshape((-1, q//w_size, w_size, r//w_size, w_size)).transpose(1,3,0,2,4).reshape((-1,w_size, w_size, w_size))     
     
-    ii=0
-    for j in range(0,m_side_cubes):
-        for k in range(0,m_side_cubes):
-            for i in range(0,m_side_cubes):
-                m[sample_start[k]:sample_start[k+1],
-                  sample_start[j]:sample_start[j+1],
-                  sample_start[i]:sample_start[i+1]] = np.squeeze( mt[ii,:,:,:] )
-                ii = ii+1
+    # m_side_cubes = np.int(m_side/mt.shape[1])
+    # m = np.zeros((m_side,m_side,m_side))
+    
+    # sample_start=np.arange(0,m.shape[0]+1,mt.shape[1])
+    
+    # ii=0
+    # for j in range(0,m_side_cubes):
+    #     for k in range(0,m_side_cubes):
+    #         for i in range(0,m_side_cubes):
+    #             m[sample_start[k]:sample_start[k+1],
+    #               sample_start[j]:sample_start[j+1],
+    #               sample_start[i]:sample_start[i+1]] = np.squeeze( mt[ii,:,:,:] )
+    #             ii = ii+1
+    
+    return m
+
+def crop_matrix(mt, data_shape):
+    
+    m = mt.copy()
+    pad_size = m.shape
+    
+    m = m[(pad_size[0] - data_shape[0])//2 : -(pad_size[0] - data_shape[0])//2,
+          (pad_size[1] - data_shape[1])//2 : -(pad_size[1] - data_shape[1])//2,
+          (pad_size[2] - data_shape[2])//2 : -(pad_size[2] - data_shape[2])//2]
     
     return m
 
